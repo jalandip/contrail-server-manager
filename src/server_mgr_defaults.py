@@ -68,4 +68,18 @@ image_fields = {
     "path": ""
 }
 
+device_fields = {
+    "match_keys": "['id']",
+    "obj_name": "device",
+    "primary_keys": "['id']",
+    "id": 0,
+    "hostname": "",
+    "version": "",
+    "serialnumber": "",
+    "model": "",
+    "personality": "",
+    "master": "",
+    "ip": ""
+}
+
 email_events = ["reimage_started", "reimage_completed", "provision_started", "provision_completed"]

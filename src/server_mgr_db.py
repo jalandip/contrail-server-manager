@@ -14,6 +14,7 @@ server_table = 'server_table'
 image_table = 'image_table'
 server_status_table = 'status_table'
 server_tags_table = 'server_tags_table'
+device_table = 'device_table'
 _DUMMY_STR = "DUMMY_STR"
 
 
@@ -97,6 +98,15 @@ class ServerMgrDb:
                          value TEXT,
                          UNIQUE (tag_id),
                          UNIQUE (value))""")
+                #Create device table
+                cursor.execute(
+                    "CREATE TABLE IF NOT EXISTS " + device_table +
+                    """ (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                         serialnumber TEXT, hostname TEXT, ip TEXT, version TEXT, model TEXT,
+                         master TEXT, personality TEXT,
+                         UNIQUE (serialnumber))""")
+
+
             self._get_table_columns()
             self._smgr_log.log(self._smgr_log.DEBUG, "Created tables")
 
@@ -121,6 +131,7 @@ class ServerMgrDb:
                 DELETE FROM """ + server_table + """;
                 DELETE FROM """ + server_tags_table + """;
                 DELETE FROM """ + server_status_table + """;
+                DELETE FROM """ + device_table + """;
                 DELETE FROM """ + image_table + ";")
         except:
             raise e
@@ -184,6 +195,7 @@ class ServerMgrDb:
                 % (table_name,
                    (",".join(keys)),
                    (",".join('?' * len(keys))))
+            self._smgr_log.log(self._smgr_log.WARN, "Add DB Statment: %s , parmas %s" % (insert_str, str(values)))
             with self._con:
                 cursor = self._con.cursor()
                 cursor.execute(insert_str, values)
@@ -245,6 +257,28 @@ class ServerMgrDb:
         except Exception as e:
             raise e
 
+    def _get_device_table(self):
+        try:
+            with self._con:
+                cursor = self._con.cursor()
+                cursor.execute("select * from " + device_table)
+                rows = [x for x in cursor]
+            cols = [x[0] for x in cursor.description]
+            items = []
+            self._smgr_log.log(self._smgr_log.WARN, "Cols " + str(cols))
+            for row in rows:
+                self._smgr_log.log(self._smgr_log.WARN, "Entry In DB" + str(row))
+                item = {}
+                for prop, val in zip(cols, row):
+                    item[prop] = val
+                items.append(item)
+
+            return items
+        except Exception as e:
+            raise e
+
+
+
     def _get_items(
         self, table_name, match_dict=None,
         unmatch_dict=None, detail=False, always_fields=None):
@@ -279,6 +313,7 @@ class ServerMgrDb:
             return items
         except Exception as e:
             raise e
+
     # End _get_items
 
     def add_cluster(self, cluster_data):
@@ -295,6 +330,15 @@ class ServerMgrDb:
         except Exception as e:
             raise e
     # End of add_cluster
+
+    def add_device(self, device_data):
+        try:
+            self._smgr_log.log(self._smgr_log.WARN, "ADD to DB " + str(device_data))
+            self._add_row(device_table, device_data)
+            self._get_device_table()
+        except Exception as e:
+            raise e
+    # End of add_device
 
     def add_server(self, server_data):
         try:
@@ -735,6 +779,16 @@ class ServerMgrDb:
             cluster_table, cluster,
             {'id' : cluster['id']}, {})
     # End of update_cluster_uuids
+
+    def get_device(self, match_dict=None,
+                unmatch_dict=None, detail=False):
+        try:
+            device = self._get_items(
+                device_table, match_dict,
+                unmatch_dict, detail, ["id"])
+        except Exception as e:
+            raise e
+        return device
 
 # End class ServerMgrDb
 

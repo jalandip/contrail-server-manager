@@ -23,7 +23,7 @@ class ServerMgrlogger:
             self._smgr_log = logging.getLogger('SMGR')
             self._smgr_log.setLevel(logging.DEBUG)
 
-            fh = logging.handlers.RotatingFileHandler('/opt/contrail/debug.log')
+            fh = logging.handlers.RotatingFileHandler('/var/log/contrail-server-manager/debug.log')
             fh.setLevel(logging.DEBUG)
 
             formatter = logging.Formatter('format=%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -75,7 +75,9 @@ class ServerMgrTransactionlogger:
     GET_SMGR_CFG_SERVER = "GET_SMGR_SERVER"
     GET_SMGR_CFG_IMAGE = "GET_SMGR_IMAGE"
     GET_SMGR_CFG_STATUS = "GET_SMGR_STATUS"   
-    GET_SMGR_CFG_TAG = "GET_SMGR_TAG"   
+    GET_SMGR_CFG_TAG = "GET_SMGR_TAG"
+    GET_SMGR_CFG_DEVICE = "GET_SMGR_DEVICE"
+
 
     PUT_SMGR_CFG_ALL = "PUT_SMGR_ALL"
     PUT_SMGR_CFG_CLUSTER = "PUT_SMGR_CLUSTER"
@@ -108,7 +110,7 @@ class ServerMgrTransactionlogger:
         self._smgr_trans_log = logging.getLogger('TRANS')
         self._smgr_trans_log.setLevel(logging.DEBUG)
 
-        fh = logging.handlers.RotatingFileHandler('/opt/contrail/transaction.log')
+        fh = logging.handlers.RotatingFileHandler('/var/log/contrail-server-manager/transaction.log')
         fh.setLevel(logging.DEBUG)
 
         formatter = logging.Formatter('format=%(asctime)s - %(name)s - %(message)s')
@@ -182,12 +184,14 @@ class ServerMgrTransactionlogger:
         elif transaction_type == self.SMGR_PROVISION:
              msg = "ACTION %s: %s %s" % \
                         (transaction_type, data.query_string, success)
-
+        elif transaction_type == self.GET_SMGR_CFG_DEVICE:
+            msg = "ACTION %s: %s %s" % \
+                       (self.GET_SMGR_CFG_DEVICE, data.query_string, success)
         self._smgr_trans_log.error(msg)
 
     
 
 if __name__ == "__main__":
     smgr_log = ServerMgrlogger()
-    smgr_log.log(DEBUG, "test log ")
-    smgr_log.log(INFO, "INFO log %s" % "Thilak")
+    smgr_log.log(smgr_log.DEBUG, "test log ")
+    smgr_log.log(smgr_log.INFO, "INFO log %s" % "Thilak")

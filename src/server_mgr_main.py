@@ -9,6 +9,7 @@
                  are part of the contrail cluster of nodes, interacting
                  together to provide a scalable virtual network system.
 """
+from multiprocessing import Process
 import os
 import glob
 import sys
@@ -40,7 +41,7 @@ from server_mgr_puppet import ServerMgrPuppet as ServerMgrPuppet
 from server_mgr_logger import ServerMgrlogger as ServerMgrlogger
 from server_mgr_logger import ServerMgrTransactionlogger as ServerMgrTlog
 from server_mgr_exception import ServerMgrException as ServerMgrException
-from send_mail import send_mail
+from server_mgr_device import DeviceManager
 import tempfile
 
 bottle.BaseRequest.MEMFILE_MAX = 2 * 102400
@@ -174,15 +175,15 @@ class VncServerManager():
             exit()
 
         # Create an instance of cobbler interface class and connect to it.
-        try:
-            self._smgr_cobbler = ServerMgrCobbler(self._args.server_manager_base_dir,
-                                                  self._args.cobbler_ip_address,
-                                                  self._args.cobbler_port,
-                                                  self._args.cobbler_username,
-                                                  self._args.cobbler_password)
-        except:
-            print "Error connecting to cobbler"
-            exit()
+        # try:
+        #     self._smgr_cobbler = ServerMgrCobbler(self._args.server_manager_base_dir,
+        #                                           self._args.cobbler_ip_address,
+        #                                           self._args.cobbler_port,
+        #                                           self._args.cobbler_username,
+        #                                           self._args.cobbler_password)
+        # except:
+        #     print "Error connecting to cobbler"
+        #     exit()
 
         try:
             # needed for testing...
@@ -242,9 +243,11 @@ class VncServerManager():
             except Exception as e:
                 print repr(e)
 
+
         self._base_url = "http://%s:%s" % (self._args.listen_ip_addr,
                                            self._args.listen_port)
         self._pipe_start_app = bottle.app()
+
 
         # All bottle routes to be defined here...
         # REST calls for GET methods (Get Info about existing records)
@@ -255,6 +258,7 @@ class VncServerManager():
         bottle.route('/status', 'GET', self.get_status)
         bottle.route('/server_status', 'GET', self.get_server_status)
         bottle.route('/tag', 'GET', self.get_server_tags)
+        bottle.route('/device', 'GET', self.get_device)
 
         # REST calls for PUT methods (Create New Records)
         bottle.route('/all', 'PUT', self.create_server_mgr_config)
@@ -278,6 +282,8 @@ class VncServerManager():
         bottle.route('/server/restart', 'POST', self.restart_server)
         bottle.route('/dhcp_event', 'POST', self.process_dhcp_event)
         bottle.route('/interface_created', 'POST', self.interface_created)
+        bottle.route('/device','POST',self.discover_device)
+        bottle.route('/add_device','POST', self.add_device)
 
     def get_pipe_start_app(self):
         return self._pipe_start_app
@@ -322,10 +328,11 @@ class VncServerManager():
     # above. This call additionally provides a way of getting all the
     # configuration for a particular cluster.
     def get_cluster(self):
-        self._smgr_log.log(self._smgr_log.DEBUG, "get_cluster")
+        self._smgr_log.log(self._smgr_log.DEBUG, "get_cluster " )
         try:
             ret_data = self.validate_smgr_request("CLUSTER", "GET",
                                                          bottle.request)
+            self._smgr_log.log(self._smgr_log.DEBUG, "get_cluster request %s " % ret_data)
             if ret_data["status"] == 0:
                 match_key = ret_data["match_key"]
                 match_value = ret_data["match_value"]
@@ -378,6 +385,36 @@ class VncServerManager():
         return tag_dict
     # end get_server_tags
 
+    #
+    def get_device(self):
+        self._smgr_log.log(self._smgr_log.DEBUG, "get_device")
+        try:
+            ret_data = self.validate_smgr_request("DEVICE", "GET",
+                                                         bottle.request)
+            if ret_data["status"] == 0:
+                match_key = ret_data["match_key"]
+                match_value = ret_data["match_value"]
+                match_dict = {}
+                if match_key:
+                    match_dict[match_key] = match_value
+                detail = ret_data["detail"]
+            devices = self._serverDb.get_device(match_dict,
+                                              detail=detail)
+        except ServerMgrException as e:
+            self._smgr_trans_log.log(bottle.request,
+                                     self._smgr_trans_log.GET_SMGR_CFG_DEVICE, False)
+            abort(404, e.value)
+        except Exception as e:
+            self.log_trace()
+            self._smgr_trans_log.log(bottle.request,
+                                     self._smgr_trans_log.GET_SMGR_CFG_DEVICE, False)
+            abort(404, repr(e))
+        self._smgr_trans_log.log(bottle.request,
+                                     self._smgr_trans_log.GET_SMGR_CFG_DEVICE)
+        return {"device": devices}
+
+
+    #
     def validate_smgr_entity(self, type, entity):
         obj_list = entity.get(type, None)
         if obj_list is None:
@@ -818,6 +855,8 @@ class VncServerManager():
             validation_data = cluster_fields
         elif type == "IMAGE":
             validation_data = image_fields
+        elif type =='DEVICE':
+             validation_data = device_fields
         else:
             validation_data = None
 
@@ -1882,7 +1921,7 @@ class VncServerManager():
         try:
             ret_data = self.validate_smgr_request("SERVER", "REIMAGE", bottle.request)
             if ret_data['status'] == 0:
-                base_image_id = ret_data['base_image_id']
+                base_image_id = ['base_image_id']
                 package_image_id = ret_data['package_image_id']
                 match_key = ret_data['match_key']
                 match_value = ret_data['match_value']
@@ -2153,6 +2192,36 @@ class VncServerManager():
         entity["interface_created"] = "Yes"
         print "Interface Created"
         self.provision_server()
+
+    @staticmethod
+    def _discover_devices_start(_vnc_ip, _vnc_port, discover_data):
+        try:
+            #Create Device Manager
+            _device_manager = DeviceManager(_vnc_ip, _vnc_port)
+            _device_manager.discover(discover_data)
+        except Exception as e:
+            raise e
+
+    from multiprocessing import Process
+    def discover_device(self):
+        entity = bottle.request.json
+        self._smgr_log.log(self._smgr_log.DEBUG, "Discover device with " + str(entity))
+        try:
+            discover_process = Process(target=VncServerManager._discover_devices_start,
+                    args = (self.get_server_ip(), self.get_server_port(),entity))
+            discover_process.start()
+        except Exception as e:
+            return "Device Discover error " + e
+        return "Device Discovery started\n"
+
+    def add_device(self):
+        self._smgr_log.log(self._smgr_log.DEBUG, "add_device rest call to DB")
+        entity = bottle.request.json
+        try:
+            self._serverDb.add_device(entity)
+        except Exception as e:
+            abort(404, e.value)
+
 
     def log_trace(self):
         exc_type, exc_value, exc_traceback = sys.exc_info()
